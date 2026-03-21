@@ -2,7 +2,7 @@ from typing import Optional
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class Chat(BaseModel):
@@ -39,11 +39,25 @@ class FormSubmissionCreate(BaseModel):
     chat_id: str
     status: Optional[int] = None
 
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v):
+        if v is not None and v not in (1, 2, 3):
+            raise ValueError("status must be None, 1 (TO DO), 2 (IN PROGRESS), or 3 (COMPLETED)")
+        return v
+
 class FormSubmissionUpdate(BaseModel):
     name: Optional[str] = None
     phone_number: Optional[str] = None
     email: Optional[str] = None
     status: Optional[int] = None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v):
+        if v is not None and v not in (1, 2, 3):
+            raise ValueError("status must be None, 1 (TO DO), 2 (IN PROGRESS), or 3 (COMPLETED)")
+        return v
 
 
 # Resolve forward reference for Chat.form_submissions -> FormSubmission
