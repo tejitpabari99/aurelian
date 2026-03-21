@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import Base, Chat, FormSubmission
+from models import Base, Chat, FormSubmission, ChangeHistory
 import schemas
 
 logger = logging.getLogger(__name__)
@@ -121,3 +121,17 @@ class CRUDFormSubmission(
     pass
 
 form = CRUDFormSubmission(FormSubmission)
+
+
+class CRUDChangeHistory(
+    CRUDBase[ChangeHistory, schemas.ChangeHistoryCreate, schemas.ChangeHistoryCreate]
+):
+    """CRUD for the change_history table.
+
+    Note: UpdateSchema is set to ChangeHistoryCreate since history rows are
+    append-only and should never be updated, but the generic base requires
+    the type parameter.
+    """
+    pass
+
+change_history = CRUDChangeHistory(ChangeHistory)

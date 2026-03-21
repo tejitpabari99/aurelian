@@ -60,5 +60,30 @@ class FormSubmissionUpdate(BaseModel):
         return v
 
 
+class ChangeHistory(BaseModel):
+    """Read schema for a single change history entry."""
+    id: str
+    created_at: datetime
+    entity_type: str
+    entity_id: str
+    revision: int
+    event_type: str          # "created" | "updated" | "deleted"
+    changes: Optional[dict] = None
+    change_source: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+
+class ChangeHistoryCreate(BaseModel):
+    """Internal-use schema for inserting a change history row."""
+    entity_type: str
+    entity_id: str
+    revision: int
+    event_type: str
+    changes: Optional[dict] = None
+    change_source: Optional[str] = None
+
+
 # Resolve forward reference for Chat.form_submissions -> FormSubmission
 Chat.model_rebuild()

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from dotenv import load_dotenv
 
+import change_tracker
 import crud
 from database import SessionLocal
 import models
@@ -212,6 +213,19 @@ async def update_chat(
                         "FormSubmission created: id=%s, chat_id=%s, name=%s",
                         created_form.id, chat_id, form_data.name,
                     )
+
+                    # --- Change history: record creation ---
+                    await change_tracker.record_creation(
+                        db,
+                        entity_type="form_submission",
+                        entity_id=created_form.id,
+                        field_values=change_tracker._extract_field_values(
+                            created_form, models.FormSubmission.TRACKED_FIELDS
+                        ),
+                        tracked_fields=models.FormSubmission.TRACKED_FIELDS,
+                        change_source="chat_tool",
+                    )
+
                     tool_content = f"Success. Form submission ID: {created_form.id}"
 
                 except json.JSONDecodeError as e:
@@ -232,6 +246,11 @@ async def update_chat(
                         if form is None:
                             tool_content = f"Error: Form submission with ID {form_id} not found"
                         else:
+                            # Snapshot old values BEFORE the update for change history
+                            old_values = change_tracker._extract_field_values(
+                                form, models.FormSubmission.TRACKED_FIELDS
+                            )
+
                             # Only include fields the LLM actually provided to avoid
                             # overwriting existing values with None via exclude_unset
                             update_fields = {}
@@ -244,6 +263,21 @@ async def update_chat(
                                 "FormSubmission updated via chat: id=%s, chat_id=%s",
                                 updated_form.id, chat_id,
                             )
+
+                            # --- Change history: record update ---
+                            new_values = change_tracker._extract_field_values(
+                                updated_form, models.FormSubmission.TRACKED_FIELDS
+                            )
+                            await change_tracker.record_update(
+                                db,
+                                entity_type="form_submission",
+                                entity_id=form_id,
+                                old_values=old_values,
+                                new_values=new_values,
+                                tracked_fields=models.FormSubmission.TRACKED_FIELDS,
+                                change_source="chat_tool",
+                            )
+
                             tool_content = f"Success. Form submission {form_id} has been updated."
                 except json.JSONDecodeError as e:
                     logger.error("Failed to parse update tool call arguments: %s", e)
@@ -266,11 +300,27 @@ async def update_chat(
                         if form is None:
                             tool_content = f"Error: Form submission with ID {form_id} not found"
                         else:
+                            # Snapshot values BEFORE deletion for change history
+                            old_values = change_tracker._extract_field_values(
+                                form, models.FormSubmission.TRACKED_FIELDS
+                            )
+
                             await crud.form.remove(db, id=form_id)
                             logger.info(
                                 "FormSubmission deleted via chat: id=%s, chat_id=%s",
                                 form_id, chat_id,
                             )
+
+                            # --- Change history: record deletion ---
+                            await change_tracker.record_deletion(
+                                db,
+                                entity_type="form_submission",
+                                entity_id=form_id,
+                                field_values=old_values,
+                                tracked_fields=models.FormSubmission.TRACKED_FIELDS,
+                                change_source="chat_tool",
+                            )
+
                             tool_content = f"Success. Form submission {form_id} has been deleted."
                 except json.JSONDecodeError as e:
                     logger.error("Failed to parse delete tool call arguments: %s", e)
@@ -345,6 +395,56 @@ async def get_chat_forms(
 
 
 # ---------------------------------------------------------------------------
+# Change History endpoints (must be before /form/{form_id} to avoid ambiguity)
+# ---------------------------------------------------------------------------
+
+@app.get("/form/{form_id}/history", response_model=list[schemas.ChangeHistory])
+async def get_form_history(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the full change history for a specific form submission."""
+    logger.info("GET /form/%s/history", form_id)
+    try:
+        history = await change_tracker.get_history(
+            db, entity_type="form_submission", entity_id=form_id,
+        )
+    except Exception as e:
+        logger.error("Failed to fetch history for form %s: %s", form_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch history: {e}")
+    if not history:
+        logger.info("GET /form/%s/history — no history found", form_id)
+    else:
+        logger.info("GET /form/%s/history — returning %d entries", form_id, len(history))
+    return history
+
+
+@app.get(
+    "/history/{entity_type}/{entity_id}",
+    response_model=list[schemas.ChangeHistory],
+)
+async def get_entity_history(
+    entity_type: str,
+    entity_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generic endpoint: get the full change history for any tracked entity."""
+    logger.info("GET /history/%s/%s", entity_type, entity_id)
+    try:
+        history = await change_tracker.get_history(
+            db, entity_type=entity_type, entity_id=entity_id,
+        )
+    except Exception as e:
+        logger.error("Failed to fetch history for %s/%s: %s", entity_type, entity_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch history: {e}")
+    logger.info(
+        "GET /history/%s/%s — returning %d entries",
+        entity_type, entity_id, len(history),
+    )
+    return history
+
+
+# ---------------------------------------------------------------------------
 # Form Submission REST endpoints
 # ---------------------------------------------------------------------------
 
@@ -360,7 +460,27 @@ async def update_form(
         logger.warning("Form not found: form_id=%s", form_id)
         raise HTTPException(status_code=404, detail="Form submission not found")
 
+    # Snapshot old values BEFORE the update for change history
+    old_values = change_tracker._extract_field_values(
+        form, models.FormSubmission.TRACKED_FIELDS
+    )
+
     updated_form = await crud.form.update(db, db_obj=form, obj_in=data)
+
+    # --- Change history: record update (skips if nothing actually changed) ---
+    new_values = change_tracker._extract_field_values(
+        updated_form, models.FormSubmission.TRACKED_FIELDS
+    )
+    await change_tracker.record_update(
+        db,
+        entity_type="form_submission",
+        entity_id=form_id,
+        old_values=old_values,
+        new_values=new_values,
+        tracked_fields=models.FormSubmission.TRACKED_FIELDS,
+        change_source="rest_api",
+    )
+
     logger.info("PUT /form/%s — updated successfully", form_id)
     return updated_form
 
@@ -376,6 +496,24 @@ async def delete_form(
         logger.warning("Form not found: form_id=%s", form_id)
         raise HTTPException(status_code=404, detail="Form submission not found")
 
+    # Snapshot values BEFORE deletion for change history
+    old_values = change_tracker._extract_field_values(
+        form, models.FormSubmission.TRACKED_FIELDS
+    )
+
     deleted_form = await crud.form.remove(db, id=form_id)
+
+    # --- Change history: record deletion ---
+    await change_tracker.record_deletion(
+        db,
+        entity_type="form_submission",
+        entity_id=form_id,
+        field_values=old_values,
+        tracked_fields=models.FormSubmission.TRACKED_FIELDS,
+        change_source="rest_api",
+    )
+
     logger.info("DELETE /form/%s — deleted successfully", form_id)
     return deleted_form
+
+
