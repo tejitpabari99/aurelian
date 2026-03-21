@@ -221,6 +221,41 @@ function OpenAIConversationDisplay({ messages }: { messages: any[] }) {
   </div>
 }
 
+// ---------------------------------------------------------------------------
+// Client-side validation helpers (mirror backend rules)
+// ---------------------------------------------------------------------------
+const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const PHONE_RE = /^\+?[\d\s\-().]{7,20}$/;
+const SCRIPT_RE = /<\s*script|javascript\s*:|on\w+\s*=/i;
+
+interface FieldErrors {
+  name?: string;
+  email?: string;
+  phone_number?: string;
+}
+
+function validateFormFields(name: string, email: string, phone: string): FieldErrors {
+  const errors: FieldErrors = {};
+  // Name checks
+  const trimmedName = name.trim();
+  if (trimmedName.length === 0) {
+    errors.name = "Name must not be empty";
+  } else if (trimmedName.length > 200) {
+    errors.name = "Name must be 200 characters or fewer";
+  } else if (SCRIPT_RE.test(trimmedName)) {
+    errors.name = "Name contains disallowed content";
+  }
+  // Email checks
+  if (!EMAIL_RE.test(email.trim())) {
+    errors.email = "Invalid email (e.g. user@example.com)";
+  }
+  // Phone checks
+  if (!PHONE_RE.test(phone.trim())) {
+    errors.phone_number = "Invalid phone (digits, spaces, dashes, 7-20 chars)";
+  }
+  return errors;
+}
+
 function FormCard({
   form,
   onUpdate,
@@ -238,6 +273,7 @@ function FormCard({
   const [editEmail, setEditEmail] = useState(form.email);
   const [editPhone, setEditPhone] = useState(form.phone_number);
   const [editStatus, setEditStatus] = useState<number | null>(form.status);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const date = new Date(form.created_at + "Z");
 
@@ -246,16 +282,24 @@ function FormCard({
     setEditEmail(form.email);
     setEditPhone(form.phone_number);
     setEditStatus(form.status);
+    setFieldErrors({});
     setEditing(true);
   }
 
   async function saveEdit() {
+    // Client-side validation before sending to backend
+    const errors = validateFormFields(editName, editEmail, editPhone);
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
     setSaving(true);
     try {
       await onUpdate(form.id, {
-        name: editName,
-        email: editEmail,
-        phone_number: editPhone,
+        name: editName.trim(),
+        email: editEmail.trim(),
+        phone_number: editPhone.trim(),
         status: editStatus,
       });
       setEditing(false);
@@ -283,27 +327,30 @@ function FormCard({
             <input
               type="text"
               value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              onChange={(e) => { setEditName(e.target.value); setFieldErrors((prev) => ({ ...prev, name: undefined })); }}
+              className={`w-full border rounded px-2 py-1 text-sm ${fieldErrors.name ? "border-red-400" : "border-gray-300"}`}
             />
+            {fieldErrors.name && <p className="text-xs text-red-500 mt-0.5">{fieldErrors.name}</p>}
           </div>
           <div>
             <label className="text-xs text-gray-500">Email</label>
             <input
               type="text"
               value={editEmail}
-              onChange={(e) => setEditEmail(e.target.value)}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              onChange={(e) => { setEditEmail(e.target.value); setFieldErrors((prev) => ({ ...prev, email: undefined })); }}
+              className={`w-full border rounded px-2 py-1 text-sm ${fieldErrors.email ? "border-red-400" : "border-gray-300"}`}
             />
+            {fieldErrors.email && <p className="text-xs text-red-500 mt-0.5">{fieldErrors.email}</p>}
           </div>
           <div>
             <label className="text-xs text-gray-500">Phone</label>
             <input
               type="text"
               value={editPhone}
-              onChange={(e) => setEditPhone(e.target.value)}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              onChange={(e) => { setEditPhone(e.target.value); setFieldErrors((prev) => ({ ...prev, phone_number: undefined })); }}
+              className={`w-full border rounded px-2 py-1 text-sm ${fieldErrors.phone_number ? "border-red-400" : "border-gray-300"}`}
             />
+            {fieldErrors.phone_number && <p className="text-xs text-red-500 mt-0.5">{fieldErrors.phone_number}</p>}
           </div>
           <div>
             <label className="text-xs text-gray-500">Status</label>

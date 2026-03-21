@@ -88,13 +88,14 @@ async def test_form_created_on_tool_call(client, db_session):
 
 
 # ---------------------------------------------------------------------------
-# Test 2: Partial args — missing email and phone
+# Test 2: Partial args — missing email and phone → validation error
 # ---------------------------------------------------------------------------
 
-async def test_form_created_with_partial_args(client, db_session):
+async def test_form_rejected_with_partial_args(client, db_session):
     """
     When tool call arguments only contain 'name' (no email, no phone),
-    the form should be created with empty strings for the missing fields.
+    validation should reject the form (empty email/phone are invalid).
+    The tool response should contain a validation error and no row is created.
     """
     chat_id = await _create_chat(client)
 
@@ -103,7 +104,7 @@ async def test_form_created_with_partial_args(client, db_session):
 
     mock_responses = [
         make_openai_response(tool_calls=[tool_call]),
-        make_openai_response(content="Form submitted with partial data."),
+        make_openai_response(content="There was a validation error with the form."),
     ]
 
     with patch("main.openai_client.chat.completions.create", side_effect=mock_responses):
@@ -113,15 +114,19 @@ async def test_form_created_with_partial_args(client, db_session):
         )
 
     assert resp.status_code == 200
+    data = resp.json()
 
+    # Tool response should contain validation error
+    tool_responses = [m for m in data["messages"] if m.get("role") == "tool"]
+    assert len(tool_responses) == 1
+    assert "Validation Error" in tool_responses[0]["content"]
+
+    # No FormSubmission should be created
     result = await db_session.execute(
         select(models.FormSubmission).filter(models.FormSubmission.chat_id == chat_id)
     )
     forms = result.scalars().all()
-    assert len(forms) == 1
-    assert forms[0].name == "Jane"
-    assert forms[0].email == ""
-    assert forms[0].phone_number == ""
+    assert len(forms) == 0
 
 
 # ---------------------------------------------------------------------------

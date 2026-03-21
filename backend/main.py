@@ -8,6 +8,7 @@ import uuid, os
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from dotenv import load_dotenv
@@ -231,6 +232,13 @@ async def update_chat(
                 except json.JSONDecodeError as e:
                     logger.error("Failed to parse tool call arguments: %s", e)
                     tool_content = "Error: Could not parse form data"
+                except ValidationError as e:
+                    # Surface Pydantic validation errors (email, phone, name) to the LLM
+                    errors = "; ".join(
+                        err["msg"] for err in e.errors()
+                    )
+                    logger.warning("Validation error on form create: %s", errors)
+                    tool_content = f"Validation Error: {errors}"
                 except Exception as e:
                     logger.error("Failed to create FormSubmission: %s", e, exc_info=True)
                     tool_content = "Error: Failed to save form"
@@ -282,6 +290,12 @@ async def update_chat(
                 except json.JSONDecodeError as e:
                     logger.error("Failed to parse update tool call arguments: %s", e)
                     tool_content = "Error: Could not parse update data"
+                except ValidationError as e:
+                    errors = "; ".join(
+                        err["msg"] for err in e.errors()
+                    )
+                    logger.warning("Validation error on form update: %s", errors)
+                    tool_content = f"Validation Error: {errors}"
                 except ValueError as e:
                     logger.error("Validation error on form update: %s", e)
                     tool_content = f"Error: {e}"
@@ -364,6 +378,36 @@ async def update_chat(
     logger.info("PUT /chat/%s — done, %d messages total", chat_id, len(data.messages))
 
     return chat
+
+
+@app.delete("/chat/{chat_id}", response_model=schemas.Chat)
+async def delete_chat(chat_id: str, db: AsyncSession = Depends(get_db)):
+    logger.info("DELETE /chat/%s — deleting chat", chat_id)
+    chat = await crud.chat.get(
+        db, id=chat_id,
+        options=[selectinload(models.Chat.form_submissions)]
+    )
+    if chat is None:
+        logger.warning("Chat not found: chat_id=%s", chat_id)
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    # Record deletion for each form submission attached to this chat
+    for form in chat.form_submissions:
+        old_values = change_tracker._extract_field_values(
+            form, models.FormSubmission.TRACKED_FIELDS
+        )
+        await change_tracker.record_deletion(
+            db,
+            entity_type="form_submission",
+            entity_id=form.id,
+            field_values=old_values,
+            tracked_fields=models.FormSubmission.TRACKED_FIELDS,
+            change_source="rest_api",
+        )
+
+    deleted_chat = await crud.chat.remove(db, id=chat_id)
+    logger.info("DELETE /chat/%s — deleted successfully", chat_id)
+    return deleted_chat
 
 
 @app.get("/chat/{chat_id}", response_model=schemas.Chat)

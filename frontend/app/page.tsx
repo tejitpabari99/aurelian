@@ -8,7 +8,9 @@ import useSWR from "swr";
 
 export default function Home() {
   const router = useRouter()
-  const { data } = useSWR({ url: `chat` }, fetcher) // make GET request
+  const { data, mutate } = useSWR({ url: `chat` }, fetcher) // make GET request
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   async function createChat() { // make POST request
     const resp = await fetch('http://localhost:8000/chat', {
@@ -26,6 +28,27 @@ export default function Home() {
     }
   }
 
+  async function deleteChat(chatId: string) {
+    setDeleteLoading(true);
+    try {
+      const resp = await fetch(`http://localhost:8000/chat/${chatId}`, {
+        method: 'DELETE',
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => null);
+        const msg = err?.detail ?? "Failed to delete chat";
+        alert(typeof msg === "string" ? msg : JSON.stringify(msg));
+      } else {
+        // Refresh the chat list
+        await mutate();
+      }
+    } finally {
+      setDeleteLoading(false);
+      setDeletingId(null);
+    }
+  }
+
   return <div className="m-4 p-4 rounded-lg"><div className="flex justify-between items-center mb-4">
     <h1 className="text-2xl font-semibold">Chats</h1>
     <button className="justify-center rounded-md px-4 py-2 text-sm font-medium text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-opacity-75 bg-blue-950 bg-opacity-50 hover:bg-opacity-70" onClick={() => createChat()}>Create Chat</button>
@@ -40,22 +63,54 @@ export default function Home() {
             <div className="font-semibold table-cell px-3 py-3">
               Created At
             </div>
+            <div className="font-semibold table-cell px-3 py-3 text-right">
+              Actions
+            </div>
           </div>
         </div>
         <div className="table-row-group">
           {data?.map((s: any) => {
             const date = new Date(s.created_at + 'Z')
+            const isDeleting = deletingId === s.id;
             return (
-              <Link key={`${s.user_id}:${s.resource_id}`} href={`/${s.id}`} className="border-b hover:bg-neutral-200 hover:cursor-pointer table-row align-middle">
-                <div className="px-3 py-3 table-cell font-medium text-gray-900 whitespace-nowrap ">
-                  {s.id}
+              <div key={s.id} className="border-b hover:bg-neutral-100 table-row align-middle">
+                <div className="px-3 py-3 table-cell font-medium text-gray-900 whitespace-nowrap">
+                  <Link href={`/${s.id}`} className="hover:underline text-blue-700">
+                    {s.id}
+                  </Link>
                 </div>
                 <div className="table-cell px-3 py-3">
-                  <div className="flex justify-between items-center">
-                    {date.toLocaleString()}
-                  </div>
+                  {date.toLocaleString()}
                 </div>
-              </Link>
+                <div className="table-cell px-3 py-3 text-right">
+                  {isDeleting ? (
+                    <span className="inline-flex items-center space-x-2">
+                      <span className="text-xs text-red-600">Delete?</span>
+                      <button
+                        onClick={() => deleteChat(s.id)}
+                        disabled={deleteLoading}
+                        className="text-xs px-2 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {deleteLoading ? "…" : "Yes"}
+                      </button>
+                      <button
+                        onClick={() => setDeletingId(null)}
+                        disabled={deleteLoading}
+                        className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                      >
+                        No
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.preventDefault(); setDeletingId(s.id); }}
+                      className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
             )
           })}
         </div>

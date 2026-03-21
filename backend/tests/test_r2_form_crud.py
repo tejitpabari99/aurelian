@@ -276,7 +276,7 @@ async def test_create_form_status_invalid():
     """FormSubmissionCreate rejects invalid status values."""
     with pytest.raises(Exception):  # Pydantic ValidationError
         schemas.FormSubmissionCreate(
-            name="Test", email="t@t.com", phone_number="555",
+            name="Test", email="t@t.com", phone_number="555-1234",
             chat_id="abc", status=5,
         )
 
@@ -284,7 +284,7 @@ async def test_create_form_status_invalid():
 async def test_create_form_status_valid():
     """FormSubmissionCreate accepts valid status values."""
     form = schemas.FormSubmissionCreate(
-        name="Test", email="t@t.com", phone_number="555",
+        name="Test", email="t@t.com", phone_number="555-1234",
         chat_id="abc", status=2,
     )
     assert form.status == 2
