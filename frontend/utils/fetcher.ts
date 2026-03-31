@@ -4,7 +4,7 @@ class RequestError extends Error {
 }
 
 export async function fetcher(args: { url: string }) {
-  const r = await fetch(`http://localhost:8000/${args.url}`);
+  const r = await fetch(`/api/${args.url}`);
 
   if (!r.ok) {
     const error = new RequestError("An error occurred while fetching data");

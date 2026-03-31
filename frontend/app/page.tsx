@@ -13,7 +13,7 @@ export default function Home() {
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   async function createChat() { // make POST request
-    const resp = await fetch('http://localhost:8000/chat', {
+    const resp = await fetch('/api/chat', {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
@@ -31,7 +31,7 @@ export default function Home() {
   async function deleteChat(chatId: string) {
     setDeleteLoading(true);
     try {
-      const resp = await fetch(`http://localhost:8000/chat/${chatId}`, {
+      const resp = await fetch(`/api/chat/${chatId}`, {
         method: 'DELETE',
         headers: { 'Accept': 'application/json' },
       });

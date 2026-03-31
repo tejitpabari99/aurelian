@@ -64,7 +64,7 @@ function ChangeHistoryPanel({ formId, onClose }: { formId: string; onClose: () =
       setLoading(true);
       setError(null);
       try {
-        const resp = await fetch(`http://localhost:8000/form/${formId}/history`);
+        const resp = await fetch(`/api/form/${formId}/history`);
         if (!resp.ok) throw new Error("Failed to load history");
         const data = await resp.json();
         if (!cancelled) setHistory(data);
@@ -523,8 +523,8 @@ export default function Home({ params }: { params: { chatId: string } }) {
   // Fetch forms for this chat, optionally filtered by status
   const refreshForms = useCallback(async () => {
     const url = statusFilter !== null
-      ? `http://localhost:8000/chat/${params.chatId}/forms?status=${statusFilter}`
-      : `http://localhost:8000/chat/${params.chatId}/forms`;
+      ? `/api/chat/${params.chatId}/forms?status=${statusFilter}`
+      : `/api/chat/${params.chatId}/forms`;
     const resp = await fetch(url);
     if (resp.ok) {
       const forms = await resp.json();
@@ -540,7 +540,7 @@ export default function Home({ params }: { params: { chatId: string } }) {
   }, [statusFilter, refreshForms, data]);
 
   async function handleUpdateForm(formId: string, updateData: Partial<FormSubmissionData>) {
-    const resp = await fetch(`http://localhost:8000/form/${formId}`, {
+    const resp = await fetch(`/api/form/${formId}`, {
       method: 'PUT',
       headers: {
         'Accept': 'application/json',
@@ -558,7 +558,7 @@ export default function Home({ params }: { params: { chatId: string } }) {
   }
 
   async function handleDeleteForm(formId: string) {
-    const resp = await fetch(`http://localhost:8000/form/${formId}`, {
+    const resp = await fetch(`/api/form/${formId}`, {
       method: 'DELETE',
       headers: { 'Accept': 'application/json' },
     });
@@ -584,7 +584,7 @@ export default function Home({ params }: { params: { chatId: string } }) {
       messages: newMessages
     }
 
-    const resp = await fetch(`http://localhost:8000/chat/${params.chatId}`, {
+    const resp = await fetch(`/api/chat/${params.chatId}`, {
       method: 'PUT',
       headers: {
         'Accept': 'application/json',
